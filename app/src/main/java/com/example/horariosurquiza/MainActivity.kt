@@ -2,10 +2,12 @@ package com.example.horariosurquiza
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
@@ -15,10 +17,12 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,11 +34,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -42,6 +49,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -54,8 +64,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +81,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +90,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.horariosurquiza.ui.theme.HorariosUrquizaTheme
 import com.google.firebase.Firebase
 import com.google.firebase.firestore.firestore
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
 
@@ -248,15 +262,80 @@ val TimeVector: ImageVector
         return cachedTimeIcon!!
     }
 
+// Icono de corazón lleno con curva Bézier suave (Favorito activo)
+private var cachedHeartFilled: ImageVector? = null
+val HeartFilledVector: ImageVector
+    get() {
+        if (cachedHeartFilled != null) return cachedHeartFilled!!
+        cachedHeartFilled = ImageVector.Builder(
+            name = "HeartFilled",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(12.0f, 21.35f)
+                lineTo(10.55f, 20.03f)
+                curveTo(5.4f, 15.36f, 2.0f, 12.28f, 2.0f, 8.5f)
+                curveTo(2.0f, 5.42f, 4.42f, 3.0f, 7.5f, 3.0f)
+                curveTo(9.24f, 3.0f, 10.91f, 3.81f, 12.0f, 5.09f)
+                curveTo(13.09f, 3.81f, 14.76f, 3.0f, 16.5f, 3.0f)
+                curveTo(19.58f, 3.0f, 22.0f, 5.42f, 22.0f, 8.5f)
+                curveTo(22.0f, 12.28f, 18.6f, 15.36f, 13.45f, 20.04f)
+                lineTo(12.0f, 21.35f)
+                close()
+            }
+        }.build()
+        return cachedHeartFilled!!
+    }
+
+// Icono de corazón borde estilizado (Favorito inactivo)
+private var cachedHeartBorder: ImageVector? = null
+val HeartBorderVector: ImageVector
+    get() {
+        if (cachedHeartBorder != null) return cachedHeartBorder!!
+        cachedHeartBorder = ImageVector.Builder(
+            name = "HeartBorder",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(16.5f, 3.0f)
+                curveTo(14.76f, 3.0f, 13.09f, 3.81f, 12.0f, 5.09f)
+                curveTo(10.91f, 3.81f, 9.24f, 3.0f, 7.5f, 3.0f)
+                curveTo(4.42f, 3.0f, 2.0f, 5.42f, 2.0f, 8.5f)
+                curveTo(2.0f, 12.28f, 5.4f, 15.36f, 10.55f, 20.03f)
+                lineTo(12.0f, 21.35f)
+                lineTo(13.45f, 20.03f)
+                curveTo(18.6f, 15.36f, 22.0f, 12.28f, 22.0f, 8.5f)
+                curveTo(22.0f, 5.42f, 19.58f, 3.0f, 16.5f, 3.0f)
+                close()
+                moveTo(12.1f, 18.55f)
+                lineTo(12.0f, 18.65f)
+                lineTo(11.9f, 18.55f)
+                curveTo(7.14f, 14.24f, 4.0f, 11.39f, 4.0f, 8.5f)
+                curveTo(4.0f, 6.5f, 5.5f, 5.0f, 7.5f, 5.0f)
+                curveTo(9.04f, 5.0f, 10.54f, 5.99f, 11.07f, 7.36f)
+                horizontalLineTo(12.93f)
+                curveTo(13.46f, 5.99f, 14.96f, 5.0f, 16.5f, 5.0f)
+                curveTo(18.5f, 5.0f, 20.0f, 6.5f, 20.0f, 8.5f)
+                curveTo(20.0f, 11.39f, 16.86f, 14.24f, 12.1f, 18.55f)
+                close()
+            }
+        }.build()
+        return cachedHeartBorder!!
+    }
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             HorariosUrquizaTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    PantallaPrincipal(modifier = Modifier.padding(innerPadding))
-                }
+                MainScreen()
             }
         }
     }
@@ -307,7 +386,19 @@ fun calcularMinutosDiferencia(horaActualStr: String, horaTrenStr: String): Int {
     }
 }
 
-// Componente para el campo OutlinedTextField que abre el selector
+// Función auxiliar para formatear los minutos restantes manteniendo siempre "HH:MM hs (En X min)"
+fun formatearTiempoRestante(horaStr: String, diffMins: Int): String {
+    return if (diffMins > 0) {
+        "$horaStr hs (En $diffMins min)"
+    } else if (diffMins == 0) {
+        "$horaStr hs (Ahora)"
+    } else {
+        val diffPositiva = diffMins + 1440
+        "$horaStr hs (En $diffPositiva min)"
+    }
+}
+
+// Componente para el campo OutlinedTextField
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CampoSeleccionEstacion(
@@ -349,9 +440,15 @@ fun SeleccionarEstacionDialog(
     titulo: String,
     ordenEstaciones: List<String>,
     estacionesRecientes: List<String>,
+    estacionesFavoritas: MutableList<String>,
     onDismiss: () -> Unit,
     onEstacionSeleccionada: (String) -> Unit
 ) {
+    // Si una estación está en favoritas, la excluimos de la lista de recientes
+    val recientesSinFavoritas = remember(estacionesRecientes.toList(), estacionesFavoritas.toList()) {
+        estacionesRecientes.filter { !estacionesFavoritas.contains(it) }.take(3)
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -391,22 +488,57 @@ fun SeleccionarEstacionDialog(
 
                 HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
 
-                // LazyColumn con secciones Recientes y Todas las Estaciones
+                // LazyColumn con secciones: Favoritas, Recientes (sin favoritas, máx 3) y Todas las Estaciones
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    if (estacionesRecientes.isNotEmpty()) {
+                    // 1. Sección Estaciones Favoritas
+                    if (estacionesFavoritas.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Recientes",
+                                text = "Estaciones Favoritas",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
                             )
                         }
-                        items(estacionesRecientes) { estacion ->
+                        items(estacionesFavoritas) { estacion ->
+                            ListItem(
+                                headlineContent = {
+                                    Text(text = estacion, fontWeight = FontWeight.SemiBold)
+                                },
+                                leadingContent = {
+                                    Icon(
+                                        imageVector = HeartFilledVector,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                modifier = Modifier.clickable {
+                                    onEstacionSeleccionada(estacion)
+                                }
+                            )
+                        }
+                        item {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        }
+                    }
+
+                    // 2. Sección Estaciones Recientes (excluyendo favoritas, máximo 3)
+                    if (recientesSinFavoritas.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Estaciones Recientes",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
+                            )
+                        }
+                        items(recientesSinFavoritas) { estacion ->
                             ListItem(
                                 headlineContent = {
                                     Text(text = estacion, fontWeight = FontWeight.Medium)
@@ -421,6 +553,7 @@ fun SeleccionarEstacionDialog(
                         }
                     }
 
+                    // 3. Sección Todas las Estaciones
                     item {
                         Text(
                             text = "Todas las estaciones",
@@ -432,9 +565,23 @@ fun SeleccionarEstacionDialog(
                     }
 
                     items(ordenEstaciones) { estacion ->
+                        val esFavorita = estacionesFavoritas.contains(estacion)
                         ListItem(
                             headlineContent = {
                                 Text(text = estacion)
+                            },
+                            trailingContent = {
+                                IconButton(onClick = {
+                                    if (esFavorita) estacionesFavoritas.remove(estacion)
+                                    else estacionesFavoritas.add(estacion)
+                                }) {
+                                    Icon(
+                                        imageVector = if (esFavorita) HeartFilledVector else HeartBorderVector,
+                                        contentDescription = null,
+                                        tint = if (esFavorita) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             },
                             modifier = Modifier.clickable {
                                 onEstacionSeleccionada(estacion)
@@ -447,9 +594,226 @@ fun SeleccionarEstacionDialog(
     }
 }
 
+// Diálogo para gestionar la selección de Estaciones Favoritas (Primero seleccionadas, luego el resto)
+@Composable
+fun GestionarFavoritasDialog(
+    ordenEstaciones: List<String>,
+    estacionesFavoritas: List<String>,
+    onToggleFavorita: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    // Ordena las estaciones: Primero las que ya son favoritas, luego el resto
+    val estacionesOrdenadasDialog = remember(estacionesFavoritas.toList(), ordenEstaciones) {
+        ordenEstaciones.filter { estacionesFavoritas.contains(it) } + ordenEstaciones.filter { !estacionesFavoritas.contains(it) }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Seleccionar Favoritas",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    TextButton(onClick = onDismiss) {
+                        Text(
+                            text = "Listo",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(bottom = 8.dp))
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(estacionesOrdenadasDialog) { estacion ->
+                        val esFavorita = estacionesFavoritas.contains(estacion)
+                        ListItem(
+                            headlineContent = {
+                                Text(text = estacion, fontWeight = if (esFavorita) FontWeight.Bold else FontWeight.Normal)
+                            },
+                            trailingContent = {
+                                IconButton(onClick = { onToggleFavorita(estacion) }) {
+                                    Icon(
+                                        imageVector = if (esFavorita) HeartFilledVector else HeartBorderVector,
+                                        contentDescription = "Favorita",
+                                        tint = if (esFavorita) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            },
+                            modifier = Modifier.clickable { onToggleFavorita(estacion) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Pantalla principal contenedor con Bottom Navigation Bar y Pager deslizable
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun MainScreen() {
+    val context = LocalContext.current
+    val isPreview = LocalInspectionMode.current
+    val coroutineScope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
+
+    // SharedPreferences para persistencia local al cerrar y abrir la App
+    val prefs = remember(context) {
+        if (isPreview) null
+        else context.getSharedPreferences("horarios_urquiza_prefs", Context.MODE_PRIVATE)
+    }
+
+    // Carga inicial persistente de Favoritas y Recientes
+    val estacionesFavoritas = remember {
+        val list = mutableStateListOf<String>()
+        if (prefs != null) {
+            val savedFavs = prefs.getStringSet("KEY_FAVORITAS", emptySet()) ?: emptySet()
+            list.addAll(savedFavs)
+        }
+        list
+    }
+
+    val estacionesRecientes = remember {
+        val list = mutableStateListOf<String>()
+        if (prefs != null) {
+            val savedRecientsStr = prefs.getString("KEY_RECIENTES", "") ?: ""
+            if (savedRecientsStr.isNotEmpty()) {
+                list.addAll(savedRecientsStr.split(";"))
+            }
+        }
+        list
+    }
+
+    // Guardar cambios en SharedPreferences automáticamente al modificar favoritas o recientes
+    LaunchedEffect(estacionesFavoritas.toList()) {
+        prefs?.edit()?.putStringSet("KEY_FAVORITAS", estacionesFavoritas.toSet())?.apply()
+    }
+
+    LaunchedEffect(estacionesRecientes.toList()) {
+        prefs?.edit()?.putString("KEY_RECIENTES", estacionesRecientes.joinToString(";"))?.apply()
+    }
+
+    // Caché de 1 minuto para estaciones favoritas
+    val horariosFavoritasMap = remember { mutableStateMapOf<String, Pair<String, String>>() }
+    var ultimoUpdateCacheMs by remember { mutableStateOf(0L) }
+
+    // Elevación de estado: Preserva el origen y destino seleccionados al cambiar de pestaña
+    var estacionOrigen by remember { mutableStateOf("") }
+    var estacionDestino by remember { mutableStateOf("") }
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ) {
+                NavigationBarItem(
+                    selected = pagerState.currentPage == 0,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(0)
+                        }
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = CalendarVector,
+                            contentDescription = "Consulta"
+                        )
+                    },
+                    label = { Text("Consulta") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+
+                NavigationBarItem(
+                    selected = pagerState.currentPage == 1,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(1)
+                        }
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = HeartFilledVector,
+                            contentDescription = "Favoritos"
+                        )
+                    },
+                    label = { Text("Favoritos") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+            }
+        }
+    ) { innerPadding ->
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) { page ->
+            when (page) {
+                0 -> PantallaPrincipal(
+                    estacionOrigen = estacionOrigen,
+                    estacionDestino = estacionDestino,
+                    onOrigenChange = { estacionOrigen = it },
+                    onDestinoChange = { estacionDestino = it },
+                    estacionesFavoritas = estacionesFavoritas,
+                    estacionesRecientes = estacionesRecientes
+                )
+                1 -> PantallaFavoritos(
+                    estacionesFavoritas = estacionesFavoritas,
+                    horariosFavoritasMap = horariosFavoritasMap,
+                    ultimoUpdateCacheMs = ultimoUpdateCacheMs,
+                    onUpdateCacheTimestamp = { ultimoUpdateCacheMs = it }
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PantallaPrincipal(modifier: Modifier = Modifier) {
+fun PantallaPrincipal(
+    estacionOrigen: String,
+    estacionDestino: String,
+    onOrigenChange: (String) -> Unit,
+    onDestinoChange: (String) -> Unit,
+    estacionesFavoritas: MutableList<String>,
+    estacionesRecientes: MutableList<String>,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val isPreview = LocalInspectionMode.current
 
@@ -461,7 +825,7 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
         "Capitán Lozano", "Teniente Agneta", "Campo de Mayo", "Sargento Cabral", "General Lemos"
     )
 
-    // Estados para la fecha y hora seleccionada (por defecto la fecha y hora actual al abrir la app)
+    // Estados para la fecha y hora seleccionada
     val calendarActual = remember { Calendar.getInstance() }
 
     var anio by remember { mutableStateOf(calendarActual.get(Calendar.YEAR)) }
@@ -471,31 +835,33 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
     var hora by remember { mutableStateOf(calendarActual.get(Calendar.HOUR_OF_DAY)) }
     var minuto by remember { mutableStateOf(calendarActual.get(Calendar.MINUTE)) }
 
-    // Estados para los selectores de estación y lista de búsquedas recientes
-    var estacionOrigen by remember { mutableStateOf("") }
-    var estacionDestino by remember { mutableStateOf("") }
-
     var origenExpanded by remember { mutableStateOf(false) }
     var destinoExpanded by remember { mutableStateOf(false) }
-    val estacionesRecientes = remember { mutableStateListOf<String>() }
 
-    // Lista de resultados recuperados de Firestore
+    // Estado de carga y lista de resultados
+    var cargando by remember { mutableStateOf(false) }
     var listaTrenes by remember { mutableStateOf<List<Tren>>(emptyList()) }
 
     // Estado para controlar la pantalla actual
     var pantallaActual by remember { mutableStateOf(Pantalla.BUSQUEDA) }
 
-    fun actualizarRecientes(estacion: String, listaRecientes: MutableList<String>) {
+    // Intercepta el botón "Atrás" físico/gestual del sistema en la pantalla de resultados para no salir de la app
+    BackHandler(enabled = pantallaActual == Pantalla.RESULTADOS) {
+        pantallaActual = Pantalla.BUSQUEDA
+    }
+
+    fun actualizarRecientes(estacion: String, listaRecientes: MutableList<String>, listaFavoritas: List<String>) {
+        if (listaFavoritas.contains(estacion)) return // No agregar a recientes si ya es favorita
         if (listaRecientes.contains(estacion)) {
-            listaRecientes.remove(estacion) // Si ya estaba, la borramos para subirla
+            listaRecientes.remove(estacion)
         }
-        listaRecientes.add(0, estacion) // La insertamos en la posición 0 (arriba de todo)
-        if (listaRecientes.size > 5) {
-            listaRecientes.removeAt(listaRecientes.lastIndex) // Si hay 6, borramos la última
+        listaRecientes.add(0, estacion)
+        if (listaRecientes.size > 3) {
+            listaRecientes.removeAt(listaRecientes.lastIndex)
         }
     }
 
-    // Función reutilizable para realizar la consulta a Firestore con las estaciones seleccionadas
+    // Función reutilizable para realizar la consulta a Firestore
     fun ejecutarBusqueda(origen: String = estacionOrigen, destino: String = estacionDestino) {
         val indiceOrigen = ordenEstaciones.indexOf(origen)
         val indiceDestino = ordenEstaciones.indexOf(destino)
@@ -533,6 +899,7 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
             return
         }
 
+        cargando = true
         val horaActualStr = String.format(Locale.getDefault(), "%02d:%02d", hora, minuto)
         val db = Firebase.firestore
 
@@ -564,14 +931,15 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                 )
 
                 listaTrenes = trenesOrdenados.take(3)
+                cargando = false
                 pantallaActual = Pantalla.RESULTADOS
             }
             .addOnFailureListener { exception ->
+                cargando = false
                 Log.e("Firestore", "Error al obtener horarios de $coleccionTarget", exception)
             }
     }
 
-    // Transición animada entre pantallas
     AnimatedContent(
         targetState = pantallaActual,
         transitionSpec = {
@@ -590,7 +958,6 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
     ) { pantalla ->
         when (pantalla) {
             Pantalla.BUSQUEDA -> {
-                // PANTALLA 1: MENÚ PRINCIPAL DE BÚSQUEDA
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -598,7 +965,6 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // Encabezado decorativo
                     Surface(
                         color = MaterialTheme.colorScheme.primary,
                         shape = RoundedCornerShape(12.dp),
@@ -621,7 +987,7 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                         modifier = Modifier.padding(bottom = 28.dp)
                     )
 
-                    // Selector Estación de Origen (con diálogo a pantalla completa)
+                    // Selector Estación de Origen
                     CampoSeleccionEstacion(
                         label = "Estación de Origen",
                         estacionSeleccionada = estacionOrigen,
@@ -633,18 +999,23 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                             titulo = "Seleccionar Origen",
                             ordenEstaciones = ordenEstaciones,
                             estacionesRecientes = estacionesRecientes,
+                            estacionesFavoritas = estacionesFavoritas,
                             onDismiss = { origenExpanded = false },
                             onEstacionSeleccionada = { estacion ->
-                                estacionOrigen = estacion
-                                origenExpanded = false
-                                actualizarRecientes(estacion, estacionesRecientes)
+                                if (estacion == estacionDestino) {
+                                    Toast.makeText(context, "Por favor, selecciona dos estaciones distintas", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    onOrigenChange(estacion)
+                                    origenExpanded = false
+                                    actualizarRecientes(estacion, estacionesRecientes, estacionesFavoritas)
+                                }
                             }
                         )
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Selector Estación de Destino (con diálogo a pantalla completa)
+                    // Selector Estación de Destino
                     CampoSeleccionEstacion(
                         label = "Estación de Destino",
                         estacionSeleccionada = estacionDestino,
@@ -656,23 +1027,27 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                             titulo = "Seleccionar Destino",
                             ordenEstaciones = ordenEstaciones,
                             estacionesRecientes = estacionesRecientes,
+                            estacionesFavoritas = estacionesFavoritas,
                             onDismiss = { destinoExpanded = false },
                             onEstacionSeleccionada = { estacion ->
-                                estacionDestino = estacion
-                                destinoExpanded = false
-                                actualizarRecientes(estacion, estacionesRecientes)
+                                if (estacion == estacionOrigen) {
+                                    Toast.makeText(context, "Por favor, selecciona dos estaciones distintas", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    onDestinoChange(estacion)
+                                    destinoExpanded = false
+                                    actualizarRecientes(estacion, estacionesRecientes, estacionesFavoritas)
+                                }
                             }
                         )
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Selectores de Fecha y Hora (Arriba de Buscar Horarios)
+                    // Selectores de Fecha y Hora
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Botón de Selección de Fecha
                         OutlinedButton(
                             onClick = {
                                 DatePickerDialog(
@@ -704,7 +1079,6 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                             )
                         }
 
-                        // Botón de Selección de Hora
                         OutlinedButton(
                             onClick = {
                                 TimePickerDialog(
@@ -738,11 +1112,8 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Botón "Buscar horarios" con lógica dinámica según el sentido y el día
                     Button(
-                        onClick = {
-                            ejecutarBusqueda()
-                        },
+                        onClick = { ejecutarBusqueda() },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
@@ -751,21 +1122,28 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                             .fillMaxWidth()
                             .height(56.dp)
                     ) {
-                        Text(
-                            text = "Buscar horarios",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (cargando) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(text = "Cargando...", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            Text(
+                                text = "Buscar horarios",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
 
             Pantalla.RESULTADOS -> {
-                // PANTALLA 2: SEGUNDA PANTALLA DE RESULTADOS
                 Column(
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    // Flecha arriba para volver al menú principal
                     TopAppBar(
                         title = {
                             Text(
@@ -788,7 +1166,6 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                         )
                     )
 
-                    // Sección superior: Selectores arriba
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -805,12 +1182,17 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                                 titulo = "Seleccionar Origen",
                                 ordenEstaciones = ordenEstaciones,
                                 estacionesRecientes = estacionesRecientes,
+                                estacionesFavoritas = estacionesFavoritas,
                                 onDismiss = { origenExpanded = false },
                                 onEstacionSeleccionada = { estacion ->
-                                    estacionOrigen = estacion
-                                    origenExpanded = false
-                                    actualizarRecientes(estacion, estacionesRecientes)
-                                    ejecutarBusqueda(origen = estacion)
+                                    if (estacion == estacionDestino) {
+                                        Toast.makeText(context, "Por favor, selecciona dos estaciones distintas", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        onOrigenChange(estacion)
+                                        origenExpanded = false
+                                        actualizarRecientes(estacion, estacionesRecientes, estacionesFavoritas)
+                                        ejecutarBusqueda(origen = estacion)
+                                    }
                                 }
                             )
                         }
@@ -828,148 +1210,577 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
                                 titulo = "Seleccionar Destino",
                                 ordenEstaciones = ordenEstaciones,
                                 estacionesRecientes = estacionesRecientes,
+                                estacionesFavoritas = estacionesFavoritas,
                                 onDismiss = { destinoExpanded = false },
                                 onEstacionSeleccionada = { estacion ->
-                                    estacionDestino = estacion
-                                    destinoExpanded = false
-                                    actualizarRecientes(estacion, estacionesRecientes)
-                                    ejecutarBusqueda(destino = estacion)
+                                    if (estacion == estacionOrigen) {
+                                        Toast.makeText(context, "Por favor, selecciona dos estaciones distintas", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        onDestinoChange(estacion)
+                                        destinoExpanded = false
+                                        actualizarRecientes(estacion, estacionesRecientes, estacionesFavoritas)
+                                        ejecutarBusqueda(destino = estacion)
+                                    }
                                 }
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Botones de Fecha y Hora en Pantalla de Resultados
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    DatePickerDialog(
+                                        context,
+                                        { _, selectedYear, selectedMonth, selectedDay ->
+                                            anio = selectedYear
+                                            mes = selectedMonth
+                                            dia = selectedDay
+                                            ejecutarBusqueda()
+                                        },
+                                        anio, mes, dia
+                                    ).show()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = CalendarVector,
+                                    contentDescription = "Seleccionar Fecha",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = String.format(Locale.getDefault(), "%02d/%02d/%04d", dia, mes + 1, anio),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    TimePickerDialog(
+                                        context,
+                                        { _, selectedHour, selectedMinute ->
+                                            hora = selectedHour
+                                            minuto = selectedMinute
+                                            ejecutarBusqueda()
+                                        },
+                                        hora, minuto, true
+                                    ).show()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = TimeVector,
+                                    contentDescription = "Seleccionar Hora",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = String.format(Locale.getDefault(), "%02d:%02d hs", hora, minuto),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
                     }
 
-                    // Sección inferior: Lista de próximos trenes ocupando proporcionalmente el espacio vertical restante
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        listaTrenes.forEachIndexed { index, tren ->
-                            val esProximo = index == 0
-                            val containerColor = if (esProximo) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
+                    if (cargando) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "Cargando próximos trenes...",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
                             }
-                            val borderContainerColor = if (esProximo) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .padding(horizontal = 20.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            val calHoy = Calendar.getInstance()
+                            val esHoy = anio == calHoy.get(Calendar.YEAR) &&
+                                    mes == calHoy.get(Calendar.MONTH) &&
+                                    dia == calHoy.get(Calendar.DAY_OF_MONTH)
 
-                            Card(
+                            val minsHoraActual = calHoy.get(Calendar.HOUR_OF_DAY) * 60 + calHoy.get(Calendar.MINUTE)
+                            val minsHoraSeleccionada = hora * 60 + minuto
+                            val diffMinsSeleccionada = minsHoraSeleccionada - minsHoraActual
+
+                            // Usar formato relativo ("En X min" / "Ahora") solo si es hoy Y la hora seleccionada está dentro de ~1 hora (+60 min) de la hora actual
+                            val usarFormatoRelativo = esHoy && (diffMinsSeleccionada in -10..60)
+
+                            listaTrenes.forEachIndexed { index, tren ->
+                                val esProximo = index == 0
+                                val containerColor = if (esProximo) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                }
+                                val borderContainerColor = if (esProximo) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                }
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f),
+                                    colors = CardDefaults.cardColors(containerColor = containerColor),
+                                    border = BorderStroke(2.dp, borderContainerColor)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                                        verticalArrangement = Arrangement.SpaceEvenly
+                                    ) {
+                                        if (esProximo) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primary,
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier
+                                                    .align(Alignment.CenterHorizontally)
+                                                    .padding(bottom = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "PRÓXIMO TREN",
+                                                    color = MaterialTheme.colorScheme.onPrimary,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    fontSize = 12.sp,
+                                                    textAlign = TextAlign.Center,
+                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                horizontalAlignment = Alignment.Start
+                                            ) {
+                                                Text(
+                                                    text = if (usarFormatoRelativo) {
+                                                        if (tren.tiempoRestanteMinutos > 0) {
+                                                            "En ${tren.tiempoRestanteMinutos} min"
+                                                        } else if (tren.tiempoRestanteMinutos == 0) {
+                                                            "Ahora"
+                                                        } else {
+                                                            "${tren.horaLlegadaOrigen} hs"
+                                                        }
+                                                    } else {
+                                                        "${tren.horaLlegadaOrigen} hs"
+                                                    },
+                                                    fontSize = if (esProximo) 24.sp else 20.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (esProximo) {
+                                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    }
+                                                )
+                                                Text(
+                                                    text = estacionOrigen.ifEmpty { "Origen" },
+                                                    fontSize = if (esProximo) 15.sp else 14.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (esProximo) {
+                                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                                                    },
+                                                    modifier = Modifier.padding(top = 4.dp)
+                                                )
+                                            }
+
+                                            Icon(
+                                                imageVector = ArrowForwardVector,
+                                                contentDescription = "Hacia",
+                                                tint = if (esProximo) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                },
+                                                modifier = Modifier
+                                                    .padding(horizontal = 16.dp)
+                                                    .size(28.dp)
+                                            )
+
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                horizontalAlignment = Alignment.End
+                                            ) {
+                                                Text(
+                                                    text = "${tren.horaLlegadaDestino} hs",
+                                                    fontSize = if (esProximo) 24.sp else 20.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (esProximo) {
+                                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    }
+                                                )
+                                                Text(
+                                                    text = estacionDestino.ifEmpty { "Destino" },
+                                                    fontSize = if (esProximo) 15.sp else 14.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (esProximo) {
+                                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                                                    },
+                                                    modifier = Modifier.padding(top = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Pantalla de Estaciones Favoritas con Caché de 1 minuto
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PantallaFavoritos(
+    estacionesFavoritas: MutableList<String>,
+    horariosFavoritasMap: MutableMap<String, Pair<String, String>>,
+    ultimoUpdateCacheMs: Long,
+    onUpdateCacheTimestamp: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isPreview = LocalInspectionMode.current
+
+    val ordenEstaciones = listOf(
+        "Federico Lacroze", "José Artigas", "Pedro N. Arata", "Doctor F. Beiro", "El Libertador", "Antonio Devoto",
+        "Coronel F. Lynch", "Fernández Moreno", "Lourdes", "Tropezón", "José M. Bosch", "Martín Coronado", "Pablo Podestá",
+        "Jorge Newbery", "Rubén Dario", "Ejército de los Andes", "Juan B. de La Salle", "Sargento Barrufaldi",
+        "Capitán Lozano", "Teniente Agneta", "Campo de Mayo", "Sargento Cabral", "General Lemos"
+    )
+
+    var mostrarGestionarDialog by remember { mutableStateOf(false) }
+    var cargandoFavoritas by remember { mutableStateOf(true) }
+
+    // Calcular la colección del día según la fecha actual
+    val calendarActual = Calendar.getInstance()
+    val dayOfWeek = calendarActual.get(Calendar.DAY_OF_WEEK)
+    val sufijoDia = when (dayOfWeek) {
+        Calendar.SATURDAY -> "sabado"
+        Calendar.SUNDAY -> "domingo"
+        else -> "semana"
+    }
+
+    val horaActualStr = String.format(Locale.getDefault(), "%02d:%02d", calendarActual.get(Calendar.HOUR_OF_DAY), calendarActual.get(Calendar.MINUTE))
+
+    // Cargar desde Firestore los próximos trenes en ambos sentidos para cada favorita (usando caché de 1 minuto)
+    LaunchedEffect(estacionesFavoritas.toList()) {
+        if (estacionesFavoritas.isEmpty()) {
+            cargandoFavoritas = false
+            return@LaunchedEffect
+        }
+
+        // Verificación de Caché TTL (60.000 ms = 1 minuto)
+        val tiempoTranscurridoMs = System.currentTimeMillis() - ultimoUpdateCacheMs
+        val cacheValido = tiempoTranscurridoMs < 60_000L && estacionesFavoritas.all { horariosFavoritasMap.containsKey(it) }
+
+        if (cacheValido) {
+            cargandoFavoritas = false
+            return@LaunchedEffect
+        }
+
+        cargandoFavoritas = true
+        if (isPreview) {
+            estacionesFavoritas.forEach { est ->
+                horariosFavoritasMap[est] = Pair("08:15 hs (En 12 min)", "08:22 hs (En 19 min)")
+            }
+            cargandoFavoritas = false
+            onUpdateCacheTimestamp(System.currentTimeMillis())
+            return@LaunchedEffect
+        }
+
+        val db = Firebase.firestore
+        var pendientes = estacionesFavoritas.size * 2
+
+        estacionesFavoritas.forEach { estacion ->
+            val keyEstacion = obtenerClaveEstacion(estacion)
+
+            // Consulta sentido Lacroze
+            db.collection("lacroze_$sufijoDia").get().addOnSuccessListener { resLacroze ->
+                val proximosMins = resLacroze.mapNotNull { doc ->
+                    val hora = doc.getString(keyEstacion) ?: ""
+                    if (hora.isNotEmpty()) {
+                        val diff = calcularMinutosDiferencia(horaActualStr, hora)
+                        Pair(hora, diff)
+                    } else null
+                }.sortedWith(
+                    compareBy<Pair<String, Int>> { it.second < 0 }
+                        .thenBy { if (it.second >= 0) it.second else it.second + 1440 }
+                )
+
+                val txtLacroze = if (proximosMins.isNotEmpty()) {
+                    val p = proximosMins.first()
+                    formatearTiempoRestante(p.first, p.second)
+                } else "Sin servicio"
+
+                // Consulta sentido Lemos
+                db.collection("lemos_$sufijoDia").get().addOnSuccessListener { resLemos ->
+                    val proximosMinsLemos = resLemos.mapNotNull { doc ->
+                        val hora = doc.getString(keyEstacion) ?: ""
+                        if (hora.isNotEmpty()) {
+                            val diff = calcularMinutosDiferencia(horaActualStr, hora)
+                            Pair(hora, diff)
+                        } else null
+                    }.sortedWith(
+                        compareBy<Pair<String, Int>> { it.second < 0 }
+                            .thenBy { if (it.second >= 0) it.second else it.second + 1440 }
+                )
+
+                val txtLemos = if (proximosMinsLemos.isNotEmpty()) {
+                    val p = proximosMinsLemos.first()
+                    formatearTiempoRestante(p.first, p.second)
+                } else "Sin servicio"
+
+                    horariosFavoritasMap[estacion] = Pair(txtLacroze, txtLemos)
+                    pendientes -= 2
+                    if (pendientes <= 0) {
+                        cargandoFavoritas = false
+                        onUpdateCacheTimestamp(System.currentTimeMillis())
+                    }
+                }.addOnFailureListener {
+                    cargandoFavoritas = false
+                }
+            }.addOnFailureListener {
+                cargandoFavoritas = false
+            }
+        }
+    }
+
+    if (mostrarGestionarDialog) {
+        GestionarFavoritasDialog(
+            ordenEstaciones = ordenEstaciones,
+            estacionesFavoritas = estacionesFavoritas,
+            onToggleFavorita = { estacion ->
+                if (estacionesFavoritas.contains(estacion)) {
+                    estacionesFavoritas.remove(estacion)
+                } else {
+                    estacionesFavoritas.add(estacion)
+                }
+            },
+            onDismiss = { mostrarGestionarDialog = false }
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // Encabezado superior con botón a ancho completo
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+        ) {
+            Button(
+                onClick = { mostrarGestionarDialog = true },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Icon(
+                    imageVector = HeartFilledVector,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Estaciones Favoritas (${estacionesFavoritas.size})",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
+
+        if (cargandoFavoritas && estacionesFavoritas.isNotEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Cargando horarios de favoritas...",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        } else if (estacionesFavoritas.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = HeartBorderVector,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "No tienes estaciones favoritas seleccionadas.",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.outline,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { mostrarGestionarDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text(text = "Agregar estaciones favoritas")
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(estacionesFavoritas) { estacion ->
+                    val horario = horariosFavoritasMap[estacion] ?: Pair("Cargando...", "Cargando...")
+
+                    // Verificación de estaciones terminales
+                    val esLacrozeTerminal = estacion.equals("Federico Lacroze", ignoreCase = true)
+                    val esLemosTerminal = estacion.equals("General Lemos", ignoreCase = true)
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(1f),
-                                colors = CardDefaults.cardColors(containerColor = containerColor),
-                                border = BorderStroke(2.dp, borderContainerColor)
+                                    .padding(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(
+                                Text(
+                                    text = estacion,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Icon(
+                                    imageVector = HeartFilledVector,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+
+                            // Sentido Lacroze (Solo para estaciones que no sean la cabecera Lacroze)
+                            if (!esLacrozeTerminal) {
+                                Row(
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 20.dp, vertical = 18.dp),
-                                    verticalArrangement = Arrangement.SpaceEvenly
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (esProximo) {
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.primary,
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.padding(bottom = 4.dp)
-                                        ) {
-                                            Text(
-                                                text = "PRÓXIMO TREN",
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                fontSize = 12.sp,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                            )
-                                        }
-                                    }
+                                    Text(
+                                        text = "Sentido Lacroze:",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                    Text(
+                                        text = horario.first,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Lado Izquierdo: En cuánto llega + Estación Origen
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            horizontalAlignment = Alignment.Start
-                                        ) {
-                                            Text(
-                                                text = if (tren.tiempoRestanteMinutos > 0) {
-                                                    "En ${tren.tiempoRestanteMinutos} min"
-                                                } else if (tren.tiempoRestanteMinutos == 0) {
-                                                    "Sale ahora"
-                                                } else {
-                                                    "${tren.horaLlegadaOrigen} hs"
-                                                },
-                                                fontSize = if (esProximo) 24.sp else 20.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (esProximo) {
-                                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                }
-                                            )
-                                            Text(
-                                                text = estacionOrigen.ifEmpty { "Origen" },
-                                                fontSize = if (esProximo) 15.sp else 14.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = if (esProximo) {
-                                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-                                                },
-                                                modifier = Modifier.padding(top = 4.dp)
-                                            )
-                                        }
-
-                                        // En el Medio: Flecha hacia la derecha con tinte de alto contraste en modo claro/oscuro
-                                        Icon(
-                                            imageVector = ArrowForwardVector,
-                                            contentDescription = "Hacia",
-                                            tint = if (esProximo) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            },
-                                            modifier = Modifier
-                                                .padding(horizontal = 16.dp)
-                                                .size(28.dp)
-                                        )
-
-                                        // Lado Derecho: Hora a la que llega al destino HH:MM + Estación Destino
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            horizontalAlignment = Alignment.End
-                                        ) {
-                                            Text(
-                                                text = "${tren.horaLlegadaDestino} hs",
-                                                fontSize = if (esProximo) 24.sp else 20.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (esProximo) {
-                                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                }
-                                            )
-                                            Text(
-                                                text = estacionDestino.ifEmpty { "Destino" },
-                                                fontSize = if (esProximo) 15.sp else 14.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = if (esProximo) {
-                                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-                                                },
-                                                modifier = Modifier.padding(top = 4.dp)
-                                            )
-                                        }
-                                    }
+                            // Sentido Lemos (Solo para estaciones que no sean la cabecera Lemos)
+                            if (!esLemosTerminal) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Sentido Lemos:",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                    Text(
+                                        text = horario.second,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                         }
@@ -984,6 +1795,6 @@ fun PantallaPrincipal(modifier: Modifier = Modifier) {
 @Composable
 fun PantallaPrincipalPreview() {
     HorariosUrquizaTheme {
-        PantallaPrincipal()
+        MainScreen()
     }
 }
