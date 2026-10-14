@@ -329,6 +329,42 @@ val HeartBorderVector: ImageVector
         return cachedHeartBorder!!
     }
 
+// Icono vectorial para intercambiar estación origen y destino (SwapVert)
+private var cachedSwapVert: ImageVector? = null
+val SwapVertVector: ImageVector
+    get() {
+        if (cachedSwapVert != null) return cachedSwapVert!!
+        cachedSwapVert = ImageVector.Builder(
+            name = "SwapVert",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(16.01f, 11.0f)
+                horizontalLineTo(18.0f)
+                lineTo(15.0f, 6.0f)
+                lineTo(12.0f, 11.0f)
+                horizontalLineTo(14.01f)
+                verticalLineTo(18.0f)
+                horizontalLineTo(16.01f)
+                verticalLineTo(11.0f)
+                close()
+                moveTo(9.0f, 13.0f)
+                horizontalLineTo(7.0f)
+                verticalLineTo(6.0f)
+                horizontalLineTo(5.0f)
+                verticalLineTo(13.0f)
+                horizontalLineTo(3.0f)
+                lineTo(6.0f, 18.0f)
+                lineTo(9.0f, 13.0f)
+                close()
+            }
+        }.build()
+        return cachedSwapVert!!
+    }
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -683,6 +719,10 @@ fun MainScreen() {
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
 
+    // PASO 1: Variables de memoria para caché local de colecciones y bandera de estado de carga
+    val horariosCache = remember { mutableStateMapOf<String, List<Map<String, Any>>>() }
+    var datosCargados by remember { mutableStateOf(false) }
+
     // SharedPreferences para persistencia local al cerrar y abrir la App
     val prefs = remember(context) {
         if (isPreview) null
@@ -710,6 +750,38 @@ fun MainScreen() {
         list
     }
 
+    // PASO 2: Descarga asíncrona al inicio que itera sobre las 6 colecciones y llena horariosCache
+    LaunchedEffect(Unit) {
+        if (isPreview) {
+            datosCargados = true
+            return@LaunchedEffect
+        }
+
+        val db = Firebase.firestore
+        val colecciones = listOf(
+            "lemos_semana", "lacroze_semana",
+            "lemos_sabado", "lacroze_sabado",
+            "lemos_domingo", "lacroze_domingo"
+        )
+
+        var coleccionesDescargadas = 0
+        colecciones.forEach { coleccion ->
+            db.collection(coleccion).get()
+                .addOnSuccessListener { result ->
+                    val docsData = result.documents.mapNotNull { it.data }
+                    horariosCache[coleccion] = docsData
+                    coleccionesDescargadas++
+
+                    if (coleccionesDescargadas == colecciones.size) {
+                        datosCargados = true
+                    }
+                }
+                .addOnFailureListener { exception ->
+                    Log.e("FirestoreCache", "Error al precargar colección $coleccion", exception)
+                }
+        }
+    }
+
     // Guardar cambios en SharedPreferences automáticamente al modificar favoritas o recientes
     LaunchedEffect(estacionesFavoritas.toList()) {
         prefs?.edit()?.putStringSet("KEY_FAVORITAS", estacionesFavoritas.toSet())?.apply()
@@ -718,10 +790,6 @@ fun MainScreen() {
     LaunchedEffect(estacionesRecientes.toList()) {
         prefs?.edit()?.putString("KEY_RECIENTES", estacionesRecientes.joinToString(";"))?.apply()
     }
-
-    // Caché de 1 minuto para estaciones favoritas
-    val horariosFavoritasMap = remember { mutableStateMapOf<String, Pair<String, String>>() }
-    var ultimoUpdateCacheMs by remember { mutableStateOf(0L) }
 
     // Elevación de estado: Preserva el origen y destino seleccionados al cambiar de pestaña
     var estacionOrigen by remember { mutableStateOf("") }
@@ -790,13 +858,14 @@ fun MainScreen() {
                     onOrigenChange = { estacionOrigen = it },
                     onDestinoChange = { estacionDestino = it },
                     estacionesFavoritas = estacionesFavoritas,
-                    estacionesRecientes = estacionesRecientes
+                    estacionesRecientes = estacionesRecientes,
+                    horariosCache = horariosCache,
+                    datosCargados = datosCargados
                 )
                 1 -> PantallaFavoritos(
                     estacionesFavoritas = estacionesFavoritas,
-                    horariosFavoritasMap = horariosFavoritasMap,
-                    ultimoUpdateCacheMs = ultimoUpdateCacheMs,
-                    onUpdateCacheTimestamp = { ultimoUpdateCacheMs = it }
+                    horariosCache = horariosCache,
+                    datosCargados = datosCargados
                 )
             }
         }
@@ -812,6 +881,8 @@ fun PantallaPrincipal(
     onDestinoChange: (String) -> Unit,
     estacionesFavoritas: MutableList<String>,
     estacionesRecientes: MutableList<String>,
+    horariosCache: Map<String, List<Map<String, Any>>>,
+    datosCargados: Boolean,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -861,7 +932,7 @@ fun PantallaPrincipal(
         }
     }
 
-    // Función reutilizable para realizar la consulta a Firestore
+    // Función de búsqueda offline sobre la caché local en memoria
     fun ejecutarBusqueda(origen: String = estacionOrigen, destino: String = estacionDestino) {
         val indiceOrigen = ordenEstaciones.indexOf(origen)
         val indiceDestino = ordenEstaciones.indexOf(destino)
@@ -875,6 +946,14 @@ fun PantallaPrincipal(
             return
         }
 
+        pantallaActual = Pantalla.RESULTADOS
+
+        if (!datosCargados) {
+            cargando = true
+            return
+        }
+
+        cargando = false
         val sentidoPrefix = if (indiceOrigen < indiceDestino) "lacroze" else "lemos"
 
         val calSeleccionado = Calendar.getInstance().apply {
@@ -895,49 +974,46 @@ fun PantallaPrincipal(
                 Tren("08:15", "08:50", 30),
                 Tren("08:30", "09:05", 45)
             )
-            pantallaActual = Pantalla.RESULTADOS
             return
         }
 
-        cargando = true
+        // Lectura directa de la caché local de memoria
+        val docsData = horariosCache[coleccionTarget] ?: emptyList()
+        val keyOrigen = obtenerClaveEstacion(origen)
+        val keyDestino = obtenerClaveEstacion(destino)
         val horaActualStr = String.format(Locale.getDefault(), "%02d:%02d", hora, minuto)
-        val db = Firebase.firestore
 
-        db.collection(coleccionTarget).get()
-            .addOnSuccessListener { result ->
-                val keyOrigen = obtenerClaveEstacion(origen)
-                val keyDestino = obtenerClaveEstacion(destino)
+        val nuevosTrenes = mutableListOf<Tren>()
+        for (doc in docsData) {
+            val horaOrigenDoc = doc[keyOrigen] as? String ?: ""
+            val horaDestinoDoc = doc[keyDestino] as? String ?: ""
 
-                val nuevosTrenes = mutableListOf<Tren>()
-                for (document in result) {
-                    val horaOrigenDoc = document.getString(keyOrigen) ?: ""
-                    val horaDestinoDoc = document.getString(keyDestino) ?: ""
-
-                    if (horaOrigenDoc.isNotEmpty() && horaDestinoDoc.isNotEmpty()) {
-                        val diffMins = calcularMinutosDiferencia(horaActualStr, horaOrigenDoc)
-                        nuevosTrenes.add(
-                            Tren(
-                                horaLlegadaOrigen = horaOrigenDoc,
-                                horaLlegadaDestino = horaDestinoDoc,
-                                tiempoRestanteMinutos = diffMins
-                            )
-                        )
-                    }
-                }
-
-                val trenesOrdenados = nuevosTrenes.sortedWith(
-                    compareBy<Tren> { it.tiempoRestanteMinutos < 0 }
-                        .thenBy { if (it.tiempoRestanteMinutos >= 0) it.tiempoRestanteMinutos else it.tiempoRestanteMinutos + 1440 }
+            if (horaOrigenDoc.isNotEmpty() && horaDestinoDoc.isNotEmpty()) {
+                val diffMins = calcularMinutosDiferencia(horaActualStr, horaOrigenDoc)
+                nuevosTrenes.add(
+                    Tren(
+                        horaLlegadaOrigen = horaOrigenDoc,
+                        horaLlegadaDestino = horaDestinoDoc,
+                        tiempoRestanteMinutos = diffMins
+                    )
                 )
+            }
+        }
 
-                listaTrenes = trenesOrdenados.take(3)
-                cargando = false
-                pantallaActual = Pantalla.RESULTADOS
-            }
-            .addOnFailureListener { exception ->
-                cargando = false
-                Log.e("Firestore", "Error al obtener horarios de $coleccionTarget", exception)
-            }
+        // Ordenamiento priorizando tiempos positivos y selección de los 3 próximos trenes
+        val trenesOrdenados = nuevosTrenes.sortedWith(
+            compareBy<Tren> { it.tiempoRestanteMinutos < 0 }
+                .thenBy { if (it.tiempoRestanteMinutos >= 0) it.tiempoRestanteMinutos else it.tiempoRestanteMinutos + 1440 }
+        )
+
+        listaTrenes = trenesOrdenados.take(3)
+    }
+
+    // Cuando finaliza la precarga inicial si el usuario presionó 'Buscar Horarios' mientras cargaba
+    LaunchedEffect(datosCargados) {
+        if (datosCargados && cargando) {
+            ejecutarBusqueda()
+        }
     }
 
     AnimatedContent(
@@ -1013,7 +1089,31 @@ fun PantallaPrincipal(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // Botón para intercambiar Origen y Destino
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        IconButton(
+                            onClick = {
+                                if (estacionOrigen.isNotEmpty() || estacionDestino.isNotEmpty()) {
+                                    val tempOrigen = estacionOrigen
+                                    val tempDestino = estacionDestino
+                                    onOrigenChange(tempDestino)
+                                    onDestinoChange(tempOrigen)
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = SwapVertVector,
+                                contentDescription = "Intercambiar origen y destino",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
 
                     // Selector Estación de Destino
                     CampoSeleccionEstacion(
@@ -1112,6 +1212,7 @@ fun PantallaPrincipal(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
+                    // Botón "Buscar horarios" siempre disponible
                     Button(
                         onClick = { ejecutarBusqueda() },
                         colors = ButtonDefaults.buttonColors(
@@ -1122,20 +1223,11 @@ fun PantallaPrincipal(
                             .fillMaxWidth()
                             .height(56.dp)
                     ) {
-                        if (cargando) {
-                            CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(text = "Cargando...", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        } else {
-                            Text(
-                                text = "Buscar horarios",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Text(
+                            text = "Buscar horarios",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -1197,7 +1289,32 @@ fun PantallaPrincipal(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        // Botón para intercambiar Origen y Destino en la pantalla de resultados
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (estacionOrigen.isNotEmpty() || estacionDestino.isNotEmpty()) {
+                                        val tempOrigen = estacionOrigen
+                                        val tempDestino = estacionDestino
+                                        onOrigenChange(tempDestino)
+                                        onDestinoChange(tempOrigen)
+                                        ejecutarBusqueda(origen = tempDestino, destino = tempOrigen)
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = SwapVertVector,
+                                    contentDescription = "Intercambiar origen y destino",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
 
                         CampoSeleccionEstacion(
                             label = "Estación de Destino",
@@ -1473,18 +1590,15 @@ fun PantallaPrincipal(
     }
 }
 
-// Pantalla de Estaciones Favoritas con Caché de 1 minuto
+// Pantalla de Estaciones Favoritas leyendo de horariosCache
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantallaFavoritos(
     estacionesFavoritas: MutableList<String>,
-    horariosFavoritasMap: MutableMap<String, Pair<String, String>>,
-    ultimoUpdateCacheMs: Long,
-    onUpdateCacheTimestamp: (Long) -> Unit,
+    horariosCache: Map<String, List<Map<String, Any>>>,
+    datosCargados: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val isPreview = LocalInspectionMode.current
-
     val ordenEstaciones = listOf(
         "Federico Lacroze", "José Artigas", "Pedro N. Arata", "Doctor F. Beiro", "El Libertador", "Antonio Devoto",
         "Coronel F. Lynch", "Fernández Moreno", "Lourdes", "Tropezón", "José M. Bosch", "Martín Coronado", "Pablo Podestá",
@@ -1493,7 +1607,6 @@ fun PantallaFavoritos(
     )
 
     var mostrarGestionarDialog by remember { mutableStateOf(false) }
-    var cargandoFavoritas by remember { mutableStateOf(true) }
 
     // Calcular la colección del día según la fecha actual
     val calendarActual = Calendar.getInstance()
@@ -1506,87 +1619,54 @@ fun PantallaFavoritos(
 
     val horaActualStr = String.format(Locale.getDefault(), "%02d:%02d", calendarActual.get(Calendar.HOUR_OF_DAY), calendarActual.get(Calendar.MINUTE))
 
-    // Cargar desde Firestore los próximos trenes en ambos sentidos para cada favorita (usando caché de 1 minuto)
-    LaunchedEffect(estacionesFavoritas.toList()) {
-        if (estacionesFavoritas.isEmpty()) {
-            cargandoFavoritas = false
-            return@LaunchedEffect
-        }
+    // Búsqueda offline de horarios para cada favorita usando horariosCache
+    val horariosFavoritasMap = remember(estacionesFavoritas.toList(), horariosCache.toMap(), datosCargados) {
+        val map = mutableMapOf<String, Pair<String, String>>()
+        if (datosCargados) {
+            val docsLacroze = horariosCache["lacroze_$sufijoDia"] ?: emptyList()
+            val docsLemos = horariosCache["lemos_$sufijoDia"] ?: emptyList()
 
-        // Verificación de Caché TTL (60.000 ms = 1 minuto)
-        val tiempoTranscurridoMs = System.currentTimeMillis() - ultimoUpdateCacheMs
-        val cacheValido = tiempoTranscurridoMs < 60_000L && estacionesFavoritas.all { horariosFavoritasMap.containsKey(it) }
+            estacionesFavoritas.forEach { estacion ->
+                val keyEstacion = obtenerClaveEstacion(estacion)
 
-        if (cacheValido) {
-            cargandoFavoritas = false
-            return@LaunchedEffect
-        }
-
-        cargandoFavoritas = true
-        if (isPreview) {
-            estacionesFavoritas.forEach { est ->
-                horariosFavoritasMap[est] = Pair("08:15 hs (En 12 min)", "08:22 hs (En 19 min)")
-            }
-            cargandoFavoritas = false
-            onUpdateCacheTimestamp(System.currentTimeMillis())
-            return@LaunchedEffect
-        }
-
-        val db = Firebase.firestore
-        var pendientes = estacionesFavoritas.size * 2
-
-        estacionesFavoritas.forEach { estacion ->
-            val keyEstacion = obtenerClaveEstacion(estacion)
-
-            // Consulta sentido Lacroze
-            db.collection("lacroze_$sufijoDia").get().addOnSuccessListener { resLacroze ->
-                val proximosMins = resLacroze.mapNotNull { doc ->
-                    val hora = doc.getString(keyEstacion) ?: ""
-                    if (hora.isNotEmpty()) {
-                        val diff = calcularMinutosDiferencia(horaActualStr, hora)
-                        Pair(hora, diff)
+                // Sentido Lacroze
+                val proximosLacroze = docsLacroze.mapNotNull { doc ->
+                    val horaDoc = doc[keyEstacion] as? String ?: ""
+                    if (horaDoc.isNotEmpty()) {
+                        val diff = calcularMinutosDiferencia(horaActualStr, horaDoc)
+                        Pair(horaDoc, diff)
                     } else null
                 }.sortedWith(
                     compareBy<Pair<String, Int>> { it.second < 0 }
                         .thenBy { if (it.second >= 0) it.second else it.second + 1440 }
                 )
 
-                val txtLacroze = if (proximosMins.isNotEmpty()) {
-                    val p = proximosMins.first()
+                val txtLacroze = if (proximosLacroze.isNotEmpty()) {
+                    val p = proximosLacroze.first()
                     formatearTiempoRestante(p.first, p.second)
                 } else "Sin servicio"
 
-                // Consulta sentido Lemos
-                db.collection("lemos_$sufijoDia").get().addOnSuccessListener { resLemos ->
-                    val proximosMinsLemos = resLemos.mapNotNull { doc ->
-                        val hora = doc.getString(keyEstacion) ?: ""
-                        if (hora.isNotEmpty()) {
-                            val diff = calcularMinutosDiferencia(horaActualStr, hora)
-                            Pair(hora, diff)
-                        } else null
-                    }.sortedWith(
-                        compareBy<Pair<String, Int>> { it.second < 0 }
-                            .thenBy { if (it.second >= 0) it.second else it.second + 1440 }
+                // Sentido Lemos
+                val proximosLemos = docsLemos.mapNotNull { doc ->
+                    val horaDoc = doc[keyEstacion] as? String ?: ""
+                    if (horaDoc.isNotEmpty()) {
+                        val diff = calcularMinutosDiferencia(horaActualStr, horaDoc)
+                        Pair(horaDoc, diff)
+                    } else null
+                }.sortedWith(
+                    compareBy<Pair<String, Int>> { it.second < 0 }
+                        .thenBy { if (it.second >= 0) it.second else it.second + 1440 }
                 )
 
-                val txtLemos = if (proximosMinsLemos.isNotEmpty()) {
-                    val p = proximosMinsLemos.first()
+                val txtLemos = if (proximosLemos.isNotEmpty()) {
+                    val p = proximosLemos.first()
                     formatearTiempoRestante(p.first, p.second)
                 } else "Sin servicio"
 
-                    horariosFavoritasMap[estacion] = Pair(txtLacroze, txtLemos)
-                    pendientes -= 2
-                    if (pendientes <= 0) {
-                        cargandoFavoritas = false
-                        onUpdateCacheTimestamp(System.currentTimeMillis())
-                    }
-                }.addOnFailureListener {
-                    cargandoFavoritas = false
-                }
-            }.addOnFailureListener {
-                cargandoFavoritas = false
+                map[estacion] = Pair(txtLacroze, txtLemos)
             }
         }
+        map
     }
 
     if (mostrarGestionarDialog) {
@@ -1643,7 +1723,7 @@ fun PantallaFavoritos(
 
         HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp))
 
-        if (cargandoFavoritas && estacionesFavoritas.isNotEmpty()) {
+        if (!datosCargados && estacionesFavoritas.isNotEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -1652,7 +1732,7 @@ fun PantallaFavoritos(
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Cargando horarios de favoritas...",
+                        text = "Cargando horarios...",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.outline
