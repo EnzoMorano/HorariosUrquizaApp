@@ -63,6 +63,16 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         precargarCacheFirestore()
     }
 
+    // Actualiza la fecha y hora con el momento exacto actual del sistema
+    fun actualizarHoraActual() {
+        val cal = Calendar.getInstance()
+        anio = cal.get(Calendar.YEAR)
+        mes = cal.get(Calendar.MONTH)
+        dia = cal.get(Calendar.DAY_OF_MONTH)
+        hora = cal.get(Calendar.HOUR_OF_DAY)
+        minuto = cal.get(Calendar.MINUTE)
+    }
+
     private fun cargarListasPersistidas() {
         val savedFavs = prefs.getStringSet("KEY_FAVORITAS", emptySet()) ?: emptySet()
         estacionesFavoritas.clear()
@@ -220,6 +230,7 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun volverABusqueda() {
+        actualizarHoraActual()
         pantallaActual = Pantalla.BUSQUEDA
     }
 }
