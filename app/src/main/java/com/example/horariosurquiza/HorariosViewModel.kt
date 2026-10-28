@@ -29,8 +29,10 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         "Capitán Lozano", "Teniente Agneta", "Campo de Mayo", "Sargento Cabral", "General Lemos"
     )
 
-    // PASO 1: Variables de memoria para la caché local de colecciones y bandera de estado de carga
+    // Variables de memoria para la caché local de colecciones y bandera de estado de carga
     val horariosCache = mutableStateMapOf<String, List<Map<String, Any>>>()
+    val feriadosCache = mutableStateMapOf<String, Feriado>()
+
     var datosCargados by mutableStateOf(false)
         private set
 
@@ -73,6 +75,30 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         minuto = cal.get(Calendar.MINUTE)
     }
 
+    // Método para obtener la información del feriado para un año, mes y día
+    fun obtenerFeriado(year: Int, month: Int, day: Int): Feriado? {
+        val fechaFormatted = String.format(Locale.getDefault(), "%04d-%02d-%02d", year, month + 1, day)
+        return feriadosCache[fechaFormatted]
+    }
+
+    // Devuelve el sufijo de la colección ("semana", "sabado", "domingo") considerando feriados
+    fun obtenerSufijoDia(cal: Calendar): String {
+        val year = cal.get(Calendar.YEAR)
+        val month = cal.get(Calendar.MONTH)
+        val day = cal.get(Calendar.DAY_OF_MONTH)
+
+        val feriado = obtenerFeriado(year, month, day)
+        if (feriado != null) {
+            return "domingo" // En feriados se aplican horarios de domingo
+        }
+
+        return when (cal.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.SATURDAY -> "sabado"
+            Calendar.SUNDAY -> "domingo"
+            else -> "semana"
+        }
+    }
+
     private fun cargarListasPersistidas() {
         val savedFavs = prefs.getStringSet("KEY_FAVORITAS", emptySet()) ?: emptySet()
         estacionesFavoritas.clear()
@@ -93,10 +119,49 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putString("KEY_RECIENTES", estacionesRecientes.joinToString(";")).apply()
     }
 
-    // PASO 2: Descarga asíncrona al inicio que itera sobre las 6 colecciones usando viewModelScope
+    // Descarga asíncrona al inicio que itera sobre las colecciones y config de feriados
     private fun precargarCacheFirestore() {
         viewModelScope.launch {
             val db = Firebase.firestore
+
+            // Descarga de la colección config/feriados
+            db.collection("config").get()
+                .addOnSuccessListener { querySnapshot ->
+                    for (doc in querySnapshot) {
+                        val dataMap = doc.data
+                        val fechaDoc = doc.getString("fecha") ?: dataMap["fecha"] as? String ?: ""
+                        val nombreDoc = doc.getString("nombre") ?: dataMap["nombre"] as? String ?: ""
+                        val tipoDoc = doc.getString("tipo") ?: dataMap["tipo"] as? String ?: ""
+
+                        if (fechaDoc.isNotEmpty() && nombreDoc.isNotEmpty()) {
+                            feriadosCache[fechaDoc] = Feriado(fechaDoc, nombreDoc, tipoDoc)
+                        }
+
+                        dataMap.values.forEach { valObj ->
+                            if (valObj is Map<*, *>) {
+                                val f = valObj["fecha"] as? String ?: ""
+                                val n = valObj["nombre"] as? String ?: ""
+                                val t = valObj["tipo"] as? String ?: ""
+                                if (f.isNotEmpty() && n.isNotEmpty()) {
+                                    feriadosCache[f] = Feriado(f, n, t)
+                                }
+                            } else if (valObj is List<*>) {
+                                valObj.filterIsInstance<Map<*, *>>().forEach { item ->
+                                    val f = item["fecha"] as? String ?: ""
+                                    val n = item["nombre"] as? String ?: ""
+                                    val t = item["tipo"] as? String ?: ""
+                                    if (f.isNotEmpty() && n.isNotEmpty()) {
+                                        feriadosCache[f] = Feriado(f, n, t)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .addOnFailureListener { exception ->
+                    Log.e("FirestoreCache", "Error al precargar feriados", exception)
+                }
+
             val colecciones = listOf(
                 "lemos_semana", "lacroze_semana",
                 "lemos_sabado", "lacroze_sabado",
@@ -125,7 +190,6 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // Alternar estado de favorita de una estación
     fun toggleFavorita(estacion: String) {
         if (estacionesFavoritas.contains(estacion)) {
             estacionesFavoritas.remove(estacion)
@@ -137,7 +201,6 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         guardarRecientes()
     }
 
-    // Actualizar historial de estaciones recientes
     fun actualizarRecientes(estacion: String) {
         if (estacionesFavoritas.contains(estacion)) return
         if (estacionesRecientes.contains(estacion)) {
@@ -150,7 +213,6 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         guardarRecientes()
     }
 
-    // Intercambiar Estación Origen y Destino
     fun intercambiarEstaciones() {
         if (estacionOrigen.isNotEmpty() || estacionDestino.isNotEmpty()) {
             val temp = estacionOrigen
@@ -163,7 +225,6 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // PASO 3: Búsqueda offline que consulta directamente la memoria (horariosCache) sin llamadas a Firestore
     fun ejecutarBusqueda(origen: String = estacionOrigen, destino: String = estacionDestino) {
         val indiceOrigen = ordenEstaciones.indexOf(origen)
         val indiceDestino = ordenEstaciones.indexOf(destino)
@@ -190,12 +251,7 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         val calSeleccionado = Calendar.getInstance().apply {
             set(anio, mes, dia)
         }
-        val dayOfWeek = calSeleccionado.get(Calendar.DAY_OF_WEEK)
-        val sufijoDia = when (dayOfWeek) {
-            Calendar.SATURDAY -> "sabado"
-            Calendar.SUNDAY -> "domingo"
-            else -> "semana"
-        }
+        val sufijoDia = obtenerSufijoDia(calSeleccionado)
 
         val coleccionTarget = "${sentidoPrefix}_${sufijoDia}"
 

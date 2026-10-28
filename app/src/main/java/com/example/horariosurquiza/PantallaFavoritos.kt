@@ -23,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,16 +50,16 @@ fun PantallaFavoritos(
     var mostrarGestionarDialog by remember { mutableStateOf(false) }
 
     val calendarActual = Calendar.getInstance()
-    val dayOfWeek = calendarActual.get(Calendar.DAY_OF_WEEK)
-    val sufijoDia = when (dayOfWeek) {
-        Calendar.SATURDAY -> "sabado"
-        Calendar.SUNDAY -> "domingo"
-        else -> "semana"
-    }
+    val sufijoDia = viewModel.obtenerSufijoDia(calendarActual)
+    val feriadoHoy = viewModel.obtenerFeriado(
+        calendarActual.get(Calendar.YEAR),
+        calendarActual.get(Calendar.MONTH),
+        calendarActual.get(Calendar.DAY_OF_MONTH)
+    )
 
     val horaActualStr = String.format(Locale.getDefault(), "%02d:%02d", calendarActual.get(Calendar.HOUR_OF_DAY), calendarActual.get(Calendar.MINUTE))
 
-    val horariosFavoritasMap = remember(viewModel.estacionesFavoritas.toList(), viewModel.horariosCache.toMap(), viewModel.datosCargados) {
+    val horariosFavoritasMap = remember(viewModel.estacionesFavoritas.toList(), viewModel.horariosCache.toMap(), viewModel.datosCargados, viewModel.feriadosCache.toMap()) {
         val map = mutableMapOf<String, Pair<String, String>>()
         if (viewModel.datosCargados) {
             val docsLacroze = viewModel.horariosCache["lacroze_$sufijoDia"] ?: emptyList()
@@ -146,6 +147,26 @@ fun PantallaFavoritos(
                     text = "Estaciones Favoritas (${viewModel.estacionesFavoritas.size})",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        // Cartel/Banner si el día actual es feriado
+        if (feriadoHoy != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                Text(
+                    text = "⚠️ Hoy es Feriado (${feriadoHoy.nombre}). Se muestran horarios de domingo.",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                 )
             }
         }

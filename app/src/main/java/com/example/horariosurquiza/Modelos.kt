@@ -7,6 +7,13 @@ data class Tren(
     val tiempoRestanteMinutos: Int
 )
 
+// Data class para representar los feriados cargados desde Firestore
+data class Feriado(
+    val fecha: String,
+    val nombre: String,
+    val tipo: String = ""
+)
+
 // Estados de pantalla para la navegación animada
 enum class Pantalla {
     BUSQUEDA,

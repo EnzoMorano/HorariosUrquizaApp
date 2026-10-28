@@ -12,6 +12,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,8 +43,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -209,8 +208,29 @@ fun PantallaPrincipal(
                         fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(bottom = 28.dp)
+                        modifier = Modifier.padding(bottom = 20.dp)
                     )
+
+                    // Cartel/Banner de aviso si la fecha seleccionada es un feriado
+                    val feriadoSeleccionado = viewModel.obtenerFeriado(viewModel.anio, viewModel.mes, viewModel.dia)
+                    if (feriadoSeleccionado != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 20.dp)
+                        ) {
+                            Text(
+                                text = "⚠️ Feriado: ${feriadoSeleccionado.nombre}. Se aplican horarios de domingo.",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
 
                     CampoSeleccionEstacion(
                         label = "Estación de Origen",
@@ -375,171 +395,245 @@ fun PantallaPrincipal(
                 Column(
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = "Próximos Trenes",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp
-                            )
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { viewModel.volverABusqueda() }) {
-                                Icon(
-                                    imageVector = ArrowBackVector,
-                                    contentDescription = "Volver al menú principal",
-                                    tint = MaterialTheme.colorScheme.onBackground
-                                )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background
-                        )
-                    )
-
-                    Column(
+                    // Encabezado de pantalla de resultados
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 8.dp)
+                            .padding(start = 8.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        CampoSeleccionEstacion(
-                            label = "Estación de Origen",
-                            estacionSeleccionada = viewModel.estacionOrigen,
-                            onAbrirDialogo = { origenExpanded = true }
-                        )
-
-                        if (origenExpanded) {
-                            SeleccionarEstacionDialog(
-                                titulo = "Seleccionar Origen",
-                                ordenEstaciones = viewModel.ordenEstaciones,
-                                estacionesRecientes = viewModel.estacionesRecientes,
-                                estacionesFavoritas = viewModel.estacionesFavoritas,
-                                onToggleFavorita = { viewModel.toggleFavorita(it) },
-                                onDismiss = { origenExpanded = false },
-                                onEstacionSeleccionada = { estacion ->
-                                    if (estacion == viewModel.estacionDestino) {
-                                        Toast.makeText(context, "Por favor, selecciona dos estaciones distintas", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        viewModel.estacionOrigen = estacion
-                                        origenExpanded = false
-                                        viewModel.actualizarRecientes(estacion)
-                                        viewModel.ejecutarBusqueda(origen = estacion)
-                                    }
-                                }
+                        IconButton(onClick = { viewModel.volverABusqueda() }) {
+                            Icon(
+                                imageVector = ArrowBackVector,
+                                contentDescription = "Volver al menú principal",
+                                tint = MaterialTheme.colorScheme.onBackground
                             )
                         }
+                        Text(
+                            text = "Próximos Trenes",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
+                    }
 
-                        Box(
+
+
+                    // Tarjeta para Origen, Intercambio y Destino
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            contentAlignment = Alignment.Center
+                                .padding(horizontal = 16.dp, vertical = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
+                            // Origen
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { origenExpanded = true },
+                                horizontalAlignment = Alignment.Start
+                            ) {
+                                Text(
+                                    text = "Origen",
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = viewModel.estacionOrigen.ifEmpty { "Seleccionar" },
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+
+                            // Botón Intercambio
                             IconButton(
-                                onClick = { viewModel.intercambiarEstaciones() }
+                                onClick = { viewModel.intercambiarEstaciones() },
+                                modifier = Modifier
+                                    .padding(horizontal = 4.dp)
+                                    .size(40.dp)
                             ) {
                                 Icon(
                                     imageVector = SwapVertVector,
                                     contentDescription = "Intercambiar origen y destino",
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(26.dp)
                                 )
                             }
+
+                            // Destino
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { destinoExpanded = true },
+                                horizontalAlignment = Alignment.End
+                            ) {
+                                Text(
+                                    text = "Destino",
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = viewModel.estacionDestino.ifEmpty { "Seleccionar" },
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+
+
                         }
+                    }
 
-                        CampoSeleccionEstacion(
-                            label = "Estación de Destino",
-                            estacionSeleccionada = viewModel.estacionDestino,
-                            onAbrirDialogo = { destinoExpanded = true }
-                        )
-
-                        if (destinoExpanded) {
-                            SeleccionarEstacionDialog(
-                                titulo = "Seleccionar Destino",
-                                ordenEstaciones = viewModel.ordenEstaciones,
-                                estacionesRecientes = viewModel.estacionesRecientes,
-                                estacionesFavoritas = viewModel.estacionesFavoritas,
-                                onToggleFavorita = { viewModel.toggleFavorita(it) },
-                                onDismiss = { destinoExpanded = false },
-                                onEstacionSeleccionada = { estacion ->
-                                    if (estacion == viewModel.estacionOrigen) {
-                                        Toast.makeText(context, "Por favor, selecciona dos estaciones distintas", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        viewModel.estacionDestino = estacion
-                                        destinoExpanded = false
-                                        viewModel.actualizarRecientes(estacion)
-                                        viewModel.ejecutarBusqueda(destino = estacion)
-                                    }
+                    if (origenExpanded) {
+                        SeleccionarEstacionDialog(
+                            titulo = "Seleccionar Origen",
+                            ordenEstaciones = viewModel.ordenEstaciones,
+                            estacionesRecientes = viewModel.estacionesRecientes,
+                            estacionesFavoritas = viewModel.estacionesFavoritas,
+                            onToggleFavorita = { viewModel.toggleFavorita(it) },
+                            onDismiss = { origenExpanded = false },
+                            onEstacionSeleccionada = { estacion ->
+                                if (estacion == viewModel.estacionDestino) {
+                                    Toast.makeText(context, "Por favor, selecciona dos estaciones distintas", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    viewModel.estacionOrigen = estacion
+                                    origenExpanded = false
+                                    viewModel.actualizarRecientes(estacion)
+                                    viewModel.ejecutarBusqueda(origen = estacion)
                                 }
+                            }
+                        )
+                    }
+
+                    if (destinoExpanded) {
+                        SeleccionarEstacionDialog(
+                            titulo = "Seleccionar Destino",
+                            ordenEstaciones = viewModel.ordenEstaciones,
+                            estacionesRecientes = viewModel.estacionesRecientes,
+                            estacionesFavoritas = viewModel.estacionesFavoritas,
+                            onToggleFavorita = { viewModel.toggleFavorita(it) },
+                            onDismiss = { destinoExpanded = false },
+                            onEstacionSeleccionada = { estacion ->
+                                if (estacion == viewModel.estacionOrigen) {
+                                    Toast.makeText(context, "Por favor, selecciona dos estaciones distintas", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    viewModel.estacionDestino = estacion
+                                    destinoExpanded = false
+                                    viewModel.actualizarRecientes(estacion)
+                                    viewModel.ejecutarBusqueda(destino = estacion)
+                                }
+                            }
+                        )
+                    }
+
+                    // Botones de Fecha y Hora en Pantalla de Resultados
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                DatePickerDialog(
+                                    context,
+                                    { _, selectedYear, selectedMonth, selectedDay ->
+                                        viewModel.anio = selectedYear
+                                        viewModel.mes = selectedMonth
+                                        viewModel.dia = selectedDay
+                                        viewModel.ejecutarBusqueda()
+                                    },
+                                    viewModel.anio, viewModel.mes, viewModel.dia
+                                ).show()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = CalendarVector,
+                                contentDescription = "Seleccionar Fecha",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = String.format(Locale.getDefault(), "%02d/%02d/%04d", viewModel.dia, viewModel.mes + 1, viewModel.anio),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        OutlinedButton(
+                            onClick = {
+                                TimePickerDialog(
+                                    context,
+                                    { _, selectedHour, selectedMinute ->
+                                        viewModel.hora = selectedHour
+                                        viewModel.minuto = selectedMinute
+                                        viewModel.ejecutarBusqueda()
+                                    },
+                                    viewModel.hora, viewModel.minuto, true
+                                ).show()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = {
-                                    DatePickerDialog(
-                                        context,
-                                        { _, selectedYear, selectedMonth, selectedDay ->
-                                            viewModel.anio = selectedYear
-                                            viewModel.mes = selectedMonth
-                                            viewModel.dia = selectedDay
-                                            viewModel.ejecutarBusqueda()
-                                        },
-                                        viewModel.anio, viewModel.mes, viewModel.dia
-                                    ).show()
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                            ) {
-                                Icon(
-                                    imageVector = CalendarVector,
-                                    contentDescription = "Seleccionar Fecha",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = String.format(Locale.getDefault(), "%02d/%02d/%04d", viewModel.dia, viewModel.mes + 1, viewModel.anio),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
+                            Icon(
+                                imageVector = TimeVector,
+                                contentDescription = "Seleccionar Hora",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = String.format(Locale.getDefault(), "%02d:%02d hs", viewModel.hora, viewModel.minuto),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
 
-                            OutlinedButton(
-                                onClick = {
-                                    TimePickerDialog(
-                                        context,
-                                        { _, selectedHour, selectedMinute ->
-                                            viewModel.hora = selectedHour
-                                            viewModel.minuto = selectedMinute
-                                            viewModel.ejecutarBusqueda()
-                                        },
-                                        viewModel.hora, viewModel.minuto, true
-                                    ).show()
-                                },
-                                shape = RoundedCornerShape(12.dp),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                    ) {
+                        // Cartel de aviso en la pantalla de resultados si es feriado
+                        val feriadoResultado =
+                            viewModel.obtenerFeriado(viewModel.anio, viewModel.mes, viewModel.dia)
+                        if (feriadoResultado != null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 2.dp)
                             ) {
-                                Icon(
-                                    imageVector = TimeVector,
-                                    contentDescription = "Seleccionar Hora",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = String.format(Locale.getDefault(), "%02d:%02d hs", viewModel.hora, viewModel.minuto),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
+                                    text = "⚠️ Feriado: ${feriadoResultado.nombre}. Horarios de domingo.",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
                         }
@@ -568,8 +662,8 @@ fun PantallaPrincipal(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
-                                .padding(horizontal = 20.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             val calHoy = Calendar.getInstance()
                             val esHoy = viewModel.anio == calHoy.get(Calendar.YEAR) &&
@@ -605,7 +699,7 @@ fun PantallaPrincipal(
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
                                         verticalArrangement = Arrangement.SpaceEvenly
                                     ) {
                                         if (esProximo) {
@@ -614,15 +708,15 @@ fun PantallaPrincipal(
                                                 shape = RoundedCornerShape(8.dp),
                                                 modifier = Modifier
                                                     .align(Alignment.CenterHorizontally)
-                                                    .padding(bottom = 4.dp)
+                                                    .padding(bottom = 2.dp)
                                             ) {
                                                 Text(
                                                     text = "PRÓXIMO TREN",
                                                     color = MaterialTheme.colorScheme.onPrimary,
                                                     fontWeight = FontWeight.ExtraBold,
-                                                    fontSize = 12.sp,
+                                                    fontSize = 11.sp,
                                                     textAlign = TextAlign.Center,
-                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
                                                 )
                                             }
                                         }
@@ -648,7 +742,7 @@ fun PantallaPrincipal(
                                                     } else {
                                                         "${tren.horaLlegadaOrigen} hs"
                                                     },
-                                                    fontSize = if (esProximo) 24.sp else 20.sp,
+                                                    fontSize = if (esProximo) 22.sp else 19.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (esProximo) {
                                                         MaterialTheme.colorScheme.onPrimaryContainer
@@ -658,14 +752,14 @@ fun PantallaPrincipal(
                                                 )
                                                 Text(
                                                     text = viewModel.estacionOrigen.ifEmpty { "Origen" },
-                                                    fontSize = if (esProximo) 15.sp else 14.sp,
+                                                    fontSize = if (esProximo) 14.sp else 13.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = if (esProximo) {
                                                         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                                                     } else {
                                                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                                     },
-                                                    modifier = Modifier.padding(top = 4.dp)
+                                                    modifier = Modifier.padding(top = 2.dp)
                                                 )
                                             }
 
@@ -678,8 +772,8 @@ fun PantallaPrincipal(
                                                     MaterialTheme.colorScheme.onSurfaceVariant
                                                 },
                                                 modifier = Modifier
-                                                    .padding(horizontal = 16.dp)
-                                                    .size(28.dp)
+                                                    .padding(horizontal = 12.dp)
+                                                    .size(24.dp)
                                             )
 
                                             Column(
@@ -688,7 +782,7 @@ fun PantallaPrincipal(
                                             ) {
                                                 Text(
                                                     text = "${tren.horaLlegadaDestino} hs",
-                                                    fontSize = if (esProximo) 24.sp else 20.sp,
+                                                    fontSize = if (esProximo) 22.sp else 19.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (esProximo) {
                                                         MaterialTheme.colorScheme.onPrimaryContainer
@@ -698,14 +792,14 @@ fun PantallaPrincipal(
                                                 )
                                                 Text(
                                                     text = viewModel.estacionDestino.ifEmpty { "Destino" },
-                                                    fontSize = if (esProximo) 15.sp else 14.sp,
+                                                    fontSize = if (esProximo) 14.sp else 13.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = if (esProximo) {
                                                         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                                                     } else {
                                                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                                     },
-                                                    modifier = Modifier.padding(top = 4.dp)
+                                                    modifier = Modifier.padding(top = 2.dp)
                                                 )
                                             }
                                         }
