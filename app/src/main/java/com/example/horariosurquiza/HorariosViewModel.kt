@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Firebase
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -34,6 +35,10 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
     val feriadosCache = mutableStateMapOf<String, Feriado>()
 
     var datosCargados by mutableStateOf(false)
+        private set
+
+    // Estado para la verificación de actualizaciones de la aplicación
+    var estadoActualizacion by mutableStateOf(EstadoActualizacion())
         private set
 
     // Estados de navegación y selecciones de usuario
@@ -63,6 +68,11 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
     init {
         cargarListasPersistidas()
         precargarCacheFirestore()
+    }
+
+    // Descartar el diálogo de actualización
+    fun descartarActualizacion() {
+        estadoActualizacion = estadoActualizacion.copy(hayActualizacion = false)
     }
 
     // Actualiza la fecha y hora con el momento exacto actual del sistema
@@ -119,10 +129,42 @@ class HorariosViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putString("KEY_RECIENTES", estacionesRecientes.joinToString(";")).apply()
     }
 
-    // Descarga asíncrona al inicio que itera sobre las colecciones y config de feriados
+    // Verifica si hay una versión más reciente en la colección config/version
+    private fun verificarNuevaVersion(db: FirebaseFirestore) {
+        db.collection("config").document("version").get()
+            .addOnSuccessListener { doc ->
+                if (doc.exists()) {
+                    val versionRemote = doc.getString("versionActual") ?: ""
+                    val urlDescarga = doc.getString("urlDescarga") ?: ""
+
+                    val context = getApplication<Application>().applicationContext
+                    val versionInstalada = try {
+                        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0"
+                    } catch (_: Exception) {
+                        "1.0"
+                    }
+
+                    if (esVersionMasNueva(versionInstalada, versionRemote) && urlDescarga.isNotEmpty()) {
+                        estadoActualizacion = EstadoActualizacion(
+                            hayActualizacion = true,
+                            urlDescarga = urlDescarga,
+                            versionNueva = versionRemote
+                        )
+                    }
+                }
+            }
+            .addOnFailureListener { exception ->
+                Log.e("FirestoreVersion", "Error al verificar versión en Firestore", exception)
+            }
+    }
+
+    // Descarga asíncrona al inicio que itera sobre las colecciones, feriados y versión de la app
     private fun precargarCacheFirestore() {
         viewModelScope.launch {
             val db = Firebase.firestore
+
+            // Comprobar actualización de versión
+            verificarNuevaVersion(db)
 
             // Descarga de la colección config/feriados
             db.collection("config").get()

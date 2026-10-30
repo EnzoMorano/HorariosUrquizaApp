@@ -2,6 +2,8 @@ package com.example.horariosurquiza
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,6 +46,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -153,6 +157,52 @@ fun PantallaPrincipal(
     var origenExpanded by remember { mutableStateOf(false) }
     var destinoExpanded by remember { mutableStateOf(false) }
 
+    // Diálogo de aviso cuando hay una nueva versión disponible para descargar
+    if (viewModel.estadoActualizacion.hayActualizacion) {
+        AlertDialog(
+            onDismissRequest = { viewModel.descartarActualizacion() },
+            title = {
+                Text(
+                    text = "Nueva versión disponible",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "Hay una nueva versión (${viewModel.estadoActualizacion.versionNueva}) de la aplicación disponible. ¿Deseas descargar la actualización?",
+                    fontSize = 15.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.estadoActualizacion.urlDescarga)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "No se pudo abrir el enlace de descarga", Toast.LENGTH_SHORT).show()
+                        }
+                        viewModel.descartarActualizacion()
+                    }
+                ) {
+                    Text(
+                        text = "Actualizar",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.descartarActualizacion() }) {
+                    Text("Más tarde")
+                }
+            }
+        )
+    }
+
     // Actualiza la hora del sistema en tiempo real siempre que se ingrese o vuelva a la pantalla de Búsqueda
     LaunchedEffect(viewModel.pantallaActual) {
         if (viewModel.pantallaActual == Pantalla.BUSQUEDA) {
@@ -222,7 +272,7 @@ fun PantallaPrincipal(
                                 .padding(bottom = 20.dp)
                         ) {
                             Text(
-                                text = "⚠️ Feriado: ${feriadoSeleccionado.nombre}. Se aplican horarios de domingo.",
+                                text = "⚠️ Feriado: ${feriadoSeleccionado.nombre}${if (feriadoSeleccionado.tipo.isNotEmpty()) " (${feriadoSeleccionado.tipo})" else ""}. Se aplican horarios de domingo.",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -417,7 +467,26 @@ fun PantallaPrincipal(
                         )
                     }
 
-
+                    // Cartel de aviso en la pantalla de resultados si es feriado
+                    val feriadoResultado = viewModel.obtenerFeriado(viewModel.anio, viewModel.mes, viewModel.dia)
+                    if (feriadoResultado != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "⚠️ Feriado: ${feriadoResultado.nombre}. Horarios de domingo.",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
 
                     // Tarjeta para Origen, Intercambio y Destino
                     Card(
@@ -431,7 +500,7 @@ fun PantallaPrincipal(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 20.dp),
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -444,14 +513,14 @@ fun PantallaPrincipal(
                             ) {
                                 Text(
                                     text = "Origen",
-                                    fontSize = 14.sp,
+                                    fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = viewModel.estacionOrigen.ifEmpty { "Seleccionar" },
-                                    fontSize = 18.sp,
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1
                                 )
@@ -481,20 +550,18 @@ fun PantallaPrincipal(
                             ) {
                                 Text(
                                     text = "Destino",
-                                    fontSize = 14.sp,
+                                    fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = viewModel.estacionDestino.ifEmpty { "Seleccionar" },
-                                    fontSize = 18.sp,
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1
                                 )
                             }
-
-
                         }
                     }
 
@@ -574,7 +641,7 @@ fun PantallaPrincipal(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = String.format(Locale.getDefault(), "%02d/%02d/%04d", viewModel.dia, viewModel.mes + 1, viewModel.anio),
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -605,37 +672,9 @@ fun PantallaPrincipal(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = String.format(Locale.getDefault(), "%02d:%02d hs", viewModel.hora, viewModel.minuto),
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium
                             )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                    ) {
-                        // Cartel de aviso en la pantalla de resultados si es feriado
-                        val feriadoResultado =
-                            viewModel.obtenerFeriado(viewModel.anio, viewModel.mes, viewModel.dia)
-                        if (feriadoResultado != null) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "⚠️ Feriado: ${feriadoResultado.nombre}. Horarios de domingo.",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                            }
                         }
                     }
 

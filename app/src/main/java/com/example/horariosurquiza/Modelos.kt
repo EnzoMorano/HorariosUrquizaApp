@@ -14,10 +14,36 @@ data class Feriado(
     val tipo: String = ""
 )
 
+// Data class para representar el estado de actualización de la app
+data class EstadoActualizacion(
+    val hayActualizacion: Boolean = false,
+    val urlDescarga: String = "",
+    val versionNueva: String = ""
+)
+
 // Estados de pantalla para la navegación animada
 enum class Pantalla {
     BUSQUEDA,
     RESULTADOS
+}
+
+// Compara versiones semánticas ("1.0", "1.1.2") para determinar si remote es mayor que installed
+fun esVersionMasNueva(installed: String, remote: String): Boolean {
+    return try {
+        val partsInstalled = installed.split(".").map { it.trim().toIntOrNull() ?: 0 }
+        val partsRemote = remote.split(".").map { it.trim().toIntOrNull() ?: 0 }
+
+        val maxParts = maxOf(partsInstalled.size, partsRemote.size)
+        for (i in 0 until maxParts) {
+            val vInstalled = partsInstalled.getOrElse(i) { 0 }
+            val vRemote = partsRemote.getOrElse(i) { 0 }
+            if (vRemote > vInstalled) return true
+            if (vRemote < vInstalled) return false
+        }
+        false
+    } catch (_: Exception) {
+        remote != installed && remote.isNotEmpty()
+    }
 }
 
 // Función auxiliar para mapear el nombre visible de la estación con la clave correspondiente del JSON
